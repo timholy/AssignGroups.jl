@@ -123,7 +123,8 @@ end
 
 function printstats(io::IO, students, interests)
     pref, npairs, nprog = analyze(students, interests)
-    println(io, "Mean preference score: ", pref / length(students))
+    nstudents, nweeks = length(students), length(interests)
+    println(io, "Mean preference score: ", pref / nstudents / nweeks)
     println(io, "Two or more students from the same program assigned to the same group (\"program collisions\"):")
     println(io, "  Total number of program collisions: ", length(nprog))
     println(io, "  Maximum number of collisions in a single group: ", maximum(values(nprog); init=0))
