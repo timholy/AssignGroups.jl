@@ -56,7 +56,23 @@ This program contains Ipopt, a library for large-scale nonlinear optimization.
  Student("StudentD", "Program1", [2, 2])
  Student("StudentE", "Program2", [2, 3])
  Student("StudentF", "Program3", [2, 1])
+```
 
+The output here means that:
+- during week 1, students A-C were assigned group1 and students D-F were assigned group2
+- during week 2, students A-C were assigned groups 1-3 respectively; StudentD got assigned group2,
+  StudentE got assigned group3, and StudentF got assigned group1.
+
+In other words,
+- each student got their top preference in each week
+- there were no cases where two students were assigned to the same group in both weeks
+- there were no cases where two students from the same program got assigned to the same group
+
+This is the "perfect case," but you cannot count on that always being achievable.
+
+To get an overall sense of the solution, you can use
+
+```
 julia> printstats(students, interests)
 Mean preference score: 1.0
 Two or more students from the same program assigned to the same group ("program collisions"):
