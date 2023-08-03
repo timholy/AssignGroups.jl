@@ -64,6 +64,16 @@ using Test
     @test npairs[("StudentC", "StudentE")] == 1
     @test get(npairs, ("StudentA", "StudentD"), 0) == 0
     @test isempty(nprog)
+    # Can we get the same assignment by manually specifying the first week assignment?
+    students0 = deepcopy(students)
+    for student in students
+        pop!(student.assigned)
+    end
+    interests_fake = (rand(1:4, 6, 2), interests[2])
+    assign!(students, interests_fake)
+    @test students == students0
+    # Do we get a warning if all students are pre-assigned?
+    @test_logs (:warn, "All students are already assigned to groups (use `unassign!` to reset)") assign!(students, interests)
     # Case with conflict: three groups, one week, students from the same program have the same top choice but differ in their second choice
     interests = (
         [1 3 4;

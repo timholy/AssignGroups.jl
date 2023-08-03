@@ -97,3 +97,5 @@ Increase:
 
 Note that these can be in conflict with each other, you may not be able to avoid all collisions.
 Likewise, the more you penalize collisions, the less well you respect student `interests`.
+
+Finally, you can manually perform early assignments and compute the remainder; if `student.assigned` is not empty upon calling `assign!`, the existing choices are retained. Use `unassign!(students)` to wipe out all existing assignments.

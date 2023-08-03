@@ -16,6 +16,8 @@ struct Student
 end
 Student(name, program) = Student(name, program, [])
 
+Base.:(==)(s1::Student, s2::Student) = s1.name == s2.name && s1.program == s2.program && s1.assigned == s2.assigned
+
 unassign!(students) = foreach(s -> empty!(s.assigned), students)
 
 function assign!(students, interests; penalty_sameprogram=5, penalty_samepartner=10)
@@ -41,6 +43,18 @@ function assign!(students, interests; penalty_sameprogram=5, penalty_samepartner
         for j = 1:nweeks
             @constraint(model, sum(A[i, coptions[j]+1:coptions[j+1]]) == 1)
         end
+    end
+    # If any of the weeks are pre-assigned, respect the choice
+    all_preassigned = true
+    for (i, student) in enumerate(students)
+        for (j, option) in enumerate(student.assigned)
+            @constraint(model, A[i, coptions[j]+option] == 1)
+        end
+        all_preassigned &= length(student.assigned) == nweeks
+    end
+    if all_preassigned
+        @warn "All students are already assigned to groups (use `unassign!` to reset)"
+        return students
     end
     ## Build the objective
     terms = [] # Union{JuMP.AffExpr, JuMP.QuadExpr}[]
