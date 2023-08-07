@@ -163,4 +163,6 @@ function printstats(io::IO, students, interests)
 end
 printstats(students, interests) = printstats(stdout, students, interests)
 
+function parse_inputs end
+
 end
