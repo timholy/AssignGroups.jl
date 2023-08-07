@@ -10,13 +10,19 @@ using Juniper
 export Student, assign!, unassign!, printstats
 
 struct Student
-    name::String
+    first_name::String
+    last_name::String
     program::String
     assigned::Vector{Int}   # option assigned to each week
 end
-Student(name, program) = Student(name, program, [])
+Student(first_name, last_name, program) = Student(first_name, last_name, program, Int[])
 
-Base.:(==)(s1::Student, s2::Student) = s1.name == s2.name && s1.program == s2.program && s1.assigned == s2.assigned
+Base.:(==)(s1::Student, s2::Student) = s1.first_name == s2.first_name &&
+                                       s1.last_name == s2.last_name &&
+                                       s1.program == s2.program &&
+                                       s1.assigned == s2.assigned
+
+singlename(s::Student) = s.last_name * ", " * s.first_name
 
 unassign!(students) = foreach(s -> empty!(s.assigned), students)
 
@@ -48,7 +54,9 @@ function assign!(students, interests; penalty_sameprogram=5, penalty_samepartner
     all_preassigned = true
     for (i, student) in enumerate(students)
         for (j, option) in enumerate(student.assigned)
+            option == -1 && continue
             @constraint(model, A[i, coptions[j]+option] == 1)
+            set_start_value(A[i, coptions[j]+option], 1)
         end
         all_preassigned &= length(student.assigned) == nweeks
     end
@@ -115,7 +123,7 @@ function analyze(students, interests)
         pref += sum(interests[j][i1, s1.assigned[j]] for j = 1:nweeks)
         for i2 = i1+1:nstudents
             s2 = students[i2]
-            prkey = (s1.name, s2.name)
+            prkey = (singlename(s1), singlename(s2))
             for j = 1:nweeks
                 if s1.assigned[j] == s2.assigned[j]
                     npairs[prkey] = get(npairs, prkey, 0) + 1

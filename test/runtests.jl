@@ -2,7 +2,7 @@ using AssignGroups
 using Test
 
 @testset "AssignGroups" begin
-    students = [Student("Student"*s, "Program"*p) for (s, p) in zip('A':'F', "123123")]
+    students = [Student("Student"*s, "Last", "Program"*p) for (s, p) in zip('A':'F', "123123")]
     # Easy case (perfect solution available): one week, students from same program have disjoint interests
     interests = (
         [1 4;
@@ -18,13 +18,13 @@ using Test
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
     @test pref == 6
-    @test npairs[("StudentA", "StudentB")] == 1
-    @test npairs[("StudentA", "StudentC")] == 1
-    @test npairs[("StudentB", "StudentC")] == 1
-    @test npairs[("StudentD", "StudentE")] == 1
-    @test npairs[("StudentD", "StudentF")] == 1
-    @test npairs[("StudentE", "StudentF")] == 1
-    @test get(npairs, ("StudentA", "StudentD"), 0) == 0
+    @test npairs[("Last, StudentA", "Last, StudentB")] == 1
+    @test npairs[("Last, StudentA", "Last, StudentC")] == 1
+    @test npairs[("Last, StudentB", "Last, StudentC")] == 1
+    @test npairs[("Last, StudentD", "Last, StudentE")] == 1
+    @test npairs[("Last, StudentD", "Last, StudentF")] == 1
+    @test npairs[("Last, StudentE", "Last, StudentF")] == 1
+    @test get(npairs, ("Last, StudentA", "Last, StudentD"), 0) == 0
     @test isempty(nprog)
     str = sprint(printstats, students, interests)
     @test occursin(r"Mean preference score: 1.0", str)
@@ -53,16 +53,16 @@ using Test
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
     @test pref == 12
-    @test npairs[("StudentA", "StudentB")] == 1
-    @test npairs[("StudentA", "StudentC")] == 1
-    @test npairs[("StudentB", "StudentC")] == 1
-    @test npairs[("StudentD", "StudentE")] == 1
-    @test npairs[("StudentD", "StudentF")] == 1
-    @test npairs[("StudentE", "StudentF")] == 1
-    @test npairs[("StudentA", "StudentF")] == 1
-    @test npairs[("StudentB", "StudentD")] == 1
-    @test npairs[("StudentC", "StudentE")] == 1
-    @test get(npairs, ("StudentA", "StudentD"), 0) == 0
+    @test npairs[("Last, StudentA", "Last, StudentB")] == 1
+    @test npairs[("Last, StudentA", "Last, StudentC")] == 1
+    @test npairs[("Last, StudentB", "Last, StudentC")] == 1
+    @test npairs[("Last, StudentD", "Last, StudentE")] == 1
+    @test npairs[("Last, StudentD", "Last, StudentF")] == 1
+    @test npairs[("Last, StudentE", "Last, StudentF")] == 1
+    @test npairs[("Last, StudentA", "Last, StudentF")] == 1
+    @test npairs[("Last, StudentB", "Last, StudentD")] == 1
+    @test npairs[("Last, StudentC", "Last, StudentE")] == 1
+    @test get(npairs, ("Last, StudentA", "Last, StudentD"), 0) == 0
     @test isempty(nprog)
     # Can we get the same assignment by manually specifying the first week assignment?
     students0 = deepcopy(students)
