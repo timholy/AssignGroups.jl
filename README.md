@@ -5,11 +5,16 @@ This packages "optimizes" (according to chosen criteria) assignment of students 
 It was designed for Washington University in St. Louis' umbrella biomedical sciences program, the
 Division of Biological and Biomedical Science (DBBS). DBBS currently consists of 12 programs, admits approximately
 120 students/year, and begins with "Scientific Immersion" in which students get assigned to a group in week1 and week2.
+Groups address a topic led by different faculty members, and the topics in week 1 do not repeat in week 2 (it's a fresh set of topics).
 
-The optimization criteria are as follows:
-- each student supplies a preference score (lower is better) for each of the groups in each week
-- penalize assigning students from the same program to the same group during the same week
-- penalize having students paired in more than one group.
+The optimization goals are as follows:
+
+- each student supplies a preference score (lower is better, e.g., 1 = most preferred and 4 = least=preferred) for each of the groups in each week; we aim to minimize the summed preference scores of all assignments.
+- to keep the groups of approximately equal size, we penalize imbalance in the sizes of groups within the same week
+- to ensure diversity of programs within groups, we penalize assigning students from the same program to the same group during the same week
+- to ensure diversity of group partners, we penalize having students paired repeatedly across weeks
+
+This package balances these (sometimes competing) goals by optimizing an overall score with user-settable coefficients specifying the magnitude of each of these penalties.
 
 Here's a quick demo, setting up 6 students from 3 different programs; week 1 has just two groups, while week 2 has 3 groups.
 Students are identified by first and last name; in this example, all students have first name "Student".
@@ -28,14 +33,14 @@ julia> students = [Student("Student", s, "Program"*p) for (s, p) in zip('A':'F',
  Student F (Program3)
 
 julia> preferences = (# Easy case (perfect solution available): two weeks, students have disjoint preferences
-    [1 4;    # Week 1: student A scores group 1 as a 1 and group 2 as a 4
+    [1 4;    # Week 1 (two groups): student A scores group 1 as a 1 and group 2 as a 4
      1 4;    # students B&C give the same scores as A
      1 4;
      4 1;    # Students D-F have the opposing preference to students A-C
      4 1;
      4 1],
-    [1 4 4; # Week 2: now there are 3 groups (no relation to the previous week, the groups get novel assignments)
-     4 1 4; # Students who shared preferences during week 1 are non-overlapping
+    [1 4 4; # Week 2 (three groups): students who shared preferences during week 1 are non-overlapping
+     4 1 4; #
      4 4 1;
      4 1 4; # And students in the same program are also not overlapping
      4 4 1;
@@ -58,9 +63,10 @@ The output here means that:
   StudentE got assigned group3, and StudentF got assigned group1.
 
 In other words,
-- each student got their top preference in each week
+- each student got their top preference (score of 1) in each week
 - there were no cases where two students were assigned to the same group in both weeks
 - there were no cases where two students from the same program got assigned to the same group
+- group sizes were balanced (2 groups of 3 in week 1, 3 groups of 2 in week 2)
 
 This is the "perfect case," but you cannot count on that always being achievable.
 
@@ -81,7 +87,7 @@ Two or more students sharing a group in more than one week ("student collisions"
   Maximum number of collisions for a single pair: 1
 ```
 
-The `printstats` call is intended to help you tune the fitting parameters to avoid undesirable outcomes:
+From the output of the `printstats` call, you might get some insight into whether you're satisfied with the outcome and, if not, how to tune the penalty parameters:
 
 ```julia
 assign!(students, preferences; penalty_sameprogram=1, penalty_samepartner=1, penalty_sizeimbalance=1)
