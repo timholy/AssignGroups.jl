@@ -26,37 +26,57 @@ singlename(s::Student) = s.last_name * ", " * s.first_name
 
 unassign!(students) = foreach(s -> empty!(s.assigned), students)
 
-function assign!(students, interests; penalty_sameprogram=5, penalty_samepartner=10)
-    nstudents, nweeks = length(students), length(interests)
-    noptions = Int[]
+function assign!(students::AbstractVector{Student}, interests; penalty_sameprogram=5, penalty_samepartner=0.5, ipopt_options=["print_level"=>0])
+    # Check the inputs
+    axs = eachindex(students)
+    first(axs) == 1 || throw(DimensionMismatch("`students` indices must start at 1"))
+    noptions, nstudents, nweeks = Int[], length(axs), length(interests)
     for week in interests
-        nstudents == size(week, 1) || throw(DimensionMismatch("All weeks must have the same number of students"))
-        push!(noptions, size(week, 2))
+        ndims(week) == 2 || throw(DimensionMismatch("Each week in `interests` must be a matrix, `week[istudent, jgroup]`"))
+        axsw = axes(week)
+        axs == axsw[1] || throw(DimensionMismatch("All weeks must have the same number of students"))
+        first(axsw[2]) == 1 || throw(DimensionMismatch("Option indices must start at 1"))
+        push!(noptions, size(week, 2))   # number of choices (groups) in each week
+        all(iszero(week)) || all(>(0), week) || throw(DomainError("All entries in `interests` must be nonnegative (except pre-assigned weeks which may be all-zero)"))
     end
-    coptions = [0; cumsum(noptions)]
+    coptions = [0; cumsum(noptions)]  # coptions[i]+1:coptions[i+1] is the range of column indices in A corresponding to week `i`
+    totaloptions = coptions[end]
 
     # Define the solver
-    ipopt = optimizer_with_attributes(Ipopt.Optimizer, "print_level"=>0)
+    ipopt = optimizer_with_attributes(Ipopt.Optimizer, ipopt_options...)
     optimizer = optimizer_with_attributes(Juniper.Optimizer, "nl_solver"=>ipopt)
     model = Model(optimizer)
     set_silent(model)
-    set_attribute(model, "time_limit", 60)
 
     # A[i, j] = 1 if student i is assigned to option j
-    @variable(model, A[1:nstudents, 1:sum(noptions)], Bin)
+    @variable(model, A[1:nstudents, 1:totaloptions], Bin)
+    # # We'd like to use binary variables but I'm getting infeasibility errors; instead we approximate it with constraints
+    # @variable(model, 0 <= A[1:nstudents, 1:totaloptions] <= 1) #, Bin)
+    # @constraint(model, A .* (1 .- A) .<= 0.1/totaloptions)   # z*(1-z) == 0 implies z == 0 or z == 1
+
     # Each student gets assigned one option per week:
-    for i = 1:nstudents
+    for (i, s) in enumerate(students)
+        s = students[i]
         for j = 1:nweeks
-            @constraint(model, sum(A[i, coptions[j]+1:coptions[j+1]]) == 1)
+            if j > length(s.assigned) || s.assigned[j] > 0   # use -1 to indicate not participating in that week
+                @constraint(model, 0.99 <= sum(A[i, coptions[j]+1:coptions[j+1]]) <= 1.01)
+            end
         end
     end
-    # If any of the weeks are pre-assigned, respect the choice
+    # If any of the weeks are pre-assigned, respect the choice:
     all_preassigned = true
     for (i, student) in enumerate(students)
         for (j, option) in enumerate(student.assigned)
-            option == -1 && continue
-            @constraint(model, A[i, coptions[j]+option] == 1)
-            set_start_value(A[i, coptions[j]+option], 1)
+            offset = coptions[j]
+            for k = 1:noptions[j]
+                if k == option
+                    @constraint(model,  0.99 <= A[i, offset+k])
+                    set_start_value(A[i, offset+k], 1)
+                else
+                    @constraint(model, A[i, offset+k] <= 0.01)
+                    set_start_value(A[i, offset+k], 0)
+                end
+            end
         end
         all_preassigned &= length(student.assigned) == nweeks
     end
@@ -64,46 +84,44 @@ function assign!(students, interests; penalty_sameprogram=5, penalty_samepartner
         @warn "All students are already assigned to groups (use `unassign!` to reset)"
         return students
     end
-    ## Build the objective
-    terms = [] # Union{JuMP.AffExpr, JuMP.QuadExpr}[]
-    # Penalize assigning students to options they are less interested in
-    for i = 1:nstudents
-        for j = 1:nweeks
-            week = interests[j]
+    # Warm-start at an intermediate value (∝ 1/interest) for the remaining weeks:
+    for (i, student) in enumerate(students)
+        for j = length(student.assigned)+1:nweeks
+            _interests = interests[j][i, :]
+            w = sum(1 ./ _interests)
+            isfinite(w) || throw(DomainError("Student $i has invalid preference scores in week $j (all must be > 0)"))
+            offset = coptions[j]
             for k = 1:noptions[j]
-                push!(terms, @expression(model, week[i, k] * A[i, coptions[j]+k]))
+                set_start_value(A[i, offset+k], 1 / (_interests[k] * w))
             end
         end
     end
-    # Penalize assigning students from the same program to the same option
+    ## Build the objective
+    # First we create a matrix S where S[i, j] = true/false depending on whether students i and j are in the same program
+    S = falses(nstudents, nstudents)
     for i1 = 1:nstudents
         p1 = students[i1].program
         for i2 = i1+1:nstudents
             p2 = students[i2].program
-            p1 == p2 || continue
-            for j = 1:nweeks
-                for k = 1:noptions[j]
-                    push!(terms, @expression(model, penalty_sameprogram * A[i1, coptions[j]+k] * A[i2, coptions[j]+k]))
-                end
-            end
+            S[i1, i2] = S[i2, i1] = p1 == p2
         end
     end
-    # Proxy for repeatedly sharing the same group in multiple weeks: penalize the correlation
-    for i1 = 1:nstudents
-        for i2 = i1+1:nstudents
-            push!(terms, @expression(model, penalty_samepartner * (A[i1, :]' * A[i2, :])))
-        end
-    end
-    @objective(model, Min, sum(terms))
+    # The aggregate preference matrix
+    P = hcat(interests...)
+    # Now the objective
+    @NLobjective(model, Min, sum(A[i, j] * P[i, j] for i = 1:nstudents, j = 1:totaloptions) +
+                             penalty_sameprogram * sum(A[i1, j] * A[i2, j] * S[i1, i2] for i1 = 1:nstudents, i2 = i1+1:nstudents, j = 1:totaloptions) +
+                             penalty_samepartner * sum(A[i1, j] * A[i2, j] for i1 = 1:nstudents, i2 = i1+1:nstudents, j = 1:totaloptions)^2)
     optimize!(model)
-    Aval = value.(A)
+    # @show primal_status(model) dual_status(model) has_values(model) has_duals(model) objective_value(model)
     # Extract the assignments
+    Aval = value.(A)
     for i = 1:nstudents
         s = students[i]
-        empty!(s.assigned)
-        for j = 1:nweeks
+        for j = length(s.assigned)+1:nweeks
+            offset = coptions[j]
             for k = 1:noptions[j]
-                Aval[i, coptions[j]+k] > 0.5 && push!(s.assigned, k)
+                Aval[i, offset+k] > 0.5 && push!(s.assigned, k)
             end
         end
     end
@@ -119,20 +137,28 @@ function analyze(students, interests)
     nstudents, nweeks = length(students), length(interests)
     npairs = Dict{Tuple{String,String}, Int}()    # (student1, student2) => count
     nprog = Dict{Tuple{Int,Int,String}, Int}()    # (week, groupid, program) => count
+    nweeksnz = 0
+    for (j, week) in enumerate(interests)
+        all(iszero, week) && continue
+        nweeksnz += 1
+        for (i, s) in enumerate(students)
+            pref += week[i, s.assigned[j]]
+        end
+    end
+    pref /= nweeksnz * nstudents
     for (i1, s1) in enumerate(students)
-        pref += sum(interests[j][i1, s1.assigned[j]] for j = 1:nweeks)
         for i2 = i1+1:nstudents
             s2 = students[i2]
             prkey = (singlename(s1), singlename(s2))
             for j = 1:nweeks
-                if s1.assigned[j] == s2.assigned[j]
+                if s1.assigned[j] == s2.assigned[j] && s1.assigned[j] > 0
                     npairs[prkey] = get(npairs, prkey, 0) + 1
                 end
             end
             if s1.program == s2.program
                 prog = s1.program
                 for j = 1:nweeks
-                    if s1.assigned[j] == s2.assigned[j]
+                    if s1.assigned[j] == s2.assigned[j] && s1.assigned[j] > 0
                         k = s1.assigned[j]
                         nprog[(j, k, prog)] = get(nprog, (j, k, prog), 0) + 1
                     end
@@ -145,19 +171,19 @@ end
 
 function printstats(io::IO, students, interests)
     pref, npairs, nprog = analyze(students, interests)
-    nstudents, nweeks = length(students), length(interests)
-    println(io, "Mean preference score: ", pref / nstudents / nweeks)
-    println(io, "Two or more students from the same program assigned to the same group (\"program collisions\"):")
+    println(io, "Mean preference score: ", pref)
+    println(io, "\nTwo or more students from the same program assigned to the same group (\"program collisions\"):")
     println(io, "  Total number of program collisions: ", length(nprog))
     println(io, "  Maximum number of collisions in a single group: ", maximum(values(nprog); init=0))
     progsum = Dict{String, Int}()
     for ((j, k, prog), v) in nprog
         progsum[prog] = get(progsum, prog, 0) + v
     end
-    print(io, "  Number of times each program appears in a collision: ")
-    show(io, MIME("text/plain"), progsum)
-    println(io)
-    println(io, "Two or more students sharing a group in more than one week (\"student collisions\"):")
+    println(io, "  Number of times each program appears in a collision:")
+    for pr in sort(collect(progsum); by=first)
+        println(io, "   ", pr)
+    end
+    println(io, "\nTwo or more students sharing a group in more than one week (\"student collisions\"):")
     println(io, "  Total number of student collisions: ", length(filter(pr -> pr.second > 1, npairs)))
     println(io, "  Maximum number of collisions for a single pair: ", maximum(values(npairs); init=0))
 end

@@ -17,7 +17,7 @@ using Test
         @test only(s.assigned) == 1 + (i > 3)
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
-    @test pref == 6
+    @test pref == 1
     @test npairs[("Last, StudentA", "Last, StudentB")] == 1
     @test npairs[("Last, StudentA", "Last, StudentC")] == 1
     @test npairs[("Last, StudentB", "Last, StudentC")] == 1
@@ -52,7 +52,7 @@ using Test
         @test s.assigned == [1 + (i > 3), i < 4 ? i : mod1(i+1, 3)]
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
-    @test pref == 12
+    @test pref == 1
     @test npairs[("Last, StudentA", "Last, StudentB")] == 1
     @test npairs[("Last, StudentA", "Last, StudentC")] == 1
     @test npairs[("Last, StudentB", "Last, StudentC")] == 1
@@ -69,7 +69,7 @@ using Test
     for student in students
         pop!(student.assigned)
     end
-    interests_fake = (rand(1:4, 6, 2), interests[2])
+    interests_fake = (zeros(Int, 6, 2), interests[2])
     assign!(students, interests_fake)
     @test students == students0
     # Do we get a warning if all students are pre-assigned?
@@ -89,7 +89,7 @@ using Test
         @test only(s.assigned) == (i < 4 ? i : mod1(i-1, 3))
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
-    @test pref == 9
+    @test pref == 1.5
     @test isempty(nprog)
     # If we eliminate the same-program penalty, each student gets the top choice
     unassign!(students)
@@ -98,7 +98,7 @@ using Test
         @test only(s.assigned) == (i < 4 ? i : mod1(i, 3))
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
-    @test pref == 6
+    @test pref == 1
     @test nprog[(1, 1, "Program1")] == 1  # during week 1, group 1 has two students from Program1
     @test nprog[(1, 2, "Program2")] == 1  # during week 1, group 2 has two students from Program2
     @test nprog[(1, 3, "Program3")] == 1  # during week 1, group 3 has two students from Program3
@@ -118,13 +118,21 @@ using Test
          1 4 3],
     )
     unassign!(students)
-    assign!(students, interests)
+    assign!(students, interests; penalty_sameprogram=0)
     for (i, s) in enumerate(students)
         @test s.assigned == [1 + (i > 3), mod1(i, 3)]
     end
     pref, npairs, nprog = AssignGroups.analyze(students, interests)
-    @test pref == 18
+    @test pref == 1.5
     @test nprog[(2, 1, "Program1")] == 1  # during week 2, group 1 has two students from Program1
     @test nprog[(2, 2, "Program2")] == 1
     @test nprog[(2, 3, "Program3")] == 1
+    @test maximum(values(npairs)) == 1
+
+    unassign!(students)
+    assign!(students, interests; penalty_samepartner=0)
+    pref, npairs, nprog = AssignGroups.analyze(students, interests)
+    @test pref == (6 + (3 + 1 + 1 + 1 + 2 + 3)) / 12
+    @test isempty(nprog)
+    @test any(==(2), values(npairs))
 end
