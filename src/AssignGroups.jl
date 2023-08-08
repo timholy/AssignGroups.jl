@@ -22,11 +22,18 @@ Base.:(==)(s1::Student, s2::Student) = s1.first_name == s2.first_name &&
                                        s1.program == s2.program &&
                                        s1.assigned == s2.assigned
 
+function Base.show(io::IO, s::Student)
+    print(io, s.first_name, " ", s.last_name, " (", s.program, ")")
+    if !isempty(s.assigned)
+        print(io, ": ", s.assigned)
+    end
+end
+
 singlename(s::Student) = s.last_name * ", " * s.first_name
 
 unassign!(students) = foreach(s -> empty!(s.assigned), students)
 
-function assign!(students::AbstractVector{Student}, interests; penalty_sameprogram=5, penalty_samepartner=0.5, ipopt_options=["print_level"=>0])
+function assign!(students::AbstractVector{Student}, interests; penalty_sameprogram=5, penalty_samepartner=0.5, ipopt_options=["print_level"=>0], juniper_options=Pair{String,Any}[])
     # Check the inputs
     axs = eachindex(students)
     first(axs) == 1 || throw(DimensionMismatch("`students` indices must start at 1"))
@@ -44,7 +51,7 @@ function assign!(students::AbstractVector{Student}, interests; penalty_sameprogr
 
     # Define the solver
     ipopt = optimizer_with_attributes(Ipopt.Optimizer, ipopt_options...)
-    optimizer = optimizer_with_attributes(Juniper.Optimizer, "nl_solver"=>ipopt)
+    optimizer = optimizer_with_attributes(Juniper.Optimizer, "nl_solver"=>ipopt, juniper_options...)
     model = Model(optimizer)
     set_silent(model)
 
@@ -113,6 +120,9 @@ function assign!(students::AbstractVector{Student}, interests; penalty_sameprogr
                              penalty_sameprogram * sum(A[i1, j] * A[i2, j] * S[i1, i2] for i1 = 1:nstudents, i2 = i1+1:nstudents, j = 1:totaloptions) +
                              penalty_samepartner * sum(A[i1, j] * A[i2, j] for i1 = 1:nstudents, i2 = i1+1:nstudents, j = 1:totaloptions)^2)
     optimize!(model)
+    if primal_status(model) != MOI.FEASIBLE_POINT
+        @error "No feasible solution found"
+    end
     # @show primal_status(model) dual_status(model) has_values(model) has_duals(model) objective_value(model)
     # Extract the assignments
     Aval = value.(A)
