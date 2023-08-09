@@ -1,11 +1,7 @@
 module AssignGroups
 
 using JuMP
-# using Pajarito
-# using Hypatia
-# using HiGHS
-using Ipopt
-using Juniper
+using HiGHS
 
 export Student, assign!, unassign!, printstats
 
@@ -15,7 +11,7 @@ struct Student
     program::String
     assigned::Vector{Int}   # option assigned to each week
 end
-Student(first_name, last_name, program) = Student(first_name, last_name, program, Int[])
+Student(first_name, last_name, program) = Student(string(first_name), string(last_name), string(program), Int[])
 
 Base.:(==)(s1::Student, s2::Student) = s1.first_name == s2.first_name &&
                                        s1.last_name == s2.last_name &&
@@ -33,97 +29,111 @@ singlename(s::Student) = s.last_name * ", " * s.first_name
 
 unassign!(students) = foreach(s -> empty!(s.assigned), students)
 
-function assign!(students::AbstractVector{Student}, interests; penalty_sameprogram=5, penalty_samepartner=0.5, ipopt_options=["print_level"=>0], juniper_options=Pair{String,Any}[])
+function assign!(students::AbstractVector{Student}, preferences; penalty_sameprogram=1, penalty_samepartner=1, penalty_sizeimbalance=1)
     # Check the inputs
     axs = eachindex(students)
     first(axs) == 1 || throw(DimensionMismatch("`students` indices must start at 1"))
-    noptions, nstudents, nweeks = Int[], length(axs), length(interests)
-    for week in interests
-        ndims(week) == 2 || throw(DimensionMismatch("Each week in `interests` must be a matrix, `week[istudent, jgroup]`"))
+    noptions, nstudents, nweeks = Int[], length(axs), length(preferences)
+    for week in preferences
+        ndims(week) == 2 || throw(DimensionMismatch("Each week in `preferences` must be a matrix, `week[istudent, jgroup]`"))
         axsw = axes(week)
         axs == axsw[1] || throw(DimensionMismatch("All weeks must have the same number of students"))
         first(axsw[2]) == 1 || throw(DimensionMismatch("Option indices must start at 1"))
         push!(noptions, size(week, 2))   # number of choices (groups) in each week
-        all(iszero(week)) || all(>(0), week) || throw(DomainError("All entries in `interests` must be nonnegative (except pre-assigned weeks which may be all-zero)"))
     end
     coptions = [0; cumsum(noptions)]  # coptions[i]+1:coptions[i+1] is the range of column indices in A corresponding to week `i`
     totaloptions = coptions[end]
+    # nperweek = vcat((fill(noptions[k], noptions[k]) for k in 1:nweeks)...)
+    P = hcat(preferences...)  # all preferences in one matrix
+
+    # For efficiency, pre-partition the students into programs
+    program_to_students = Dict{String,Vector{Int}}()
+    for (i, s) in enumerate(students)
+        push!(get!(Vector{Int}, program_to_students, s.program), i)
+    end
+    programs = collect(keys(program_to_students))
 
     # Define the solver
-    ipopt = optimizer_with_attributes(Ipopt.Optimizer, ipopt_options...)
-    optimizer = optimizer_with_attributes(Juniper.Optimizer, "nl_solver"=>ipopt, juniper_options...)
-    model = Model(optimizer)
+    model = Model(HiGHS.Optimizer)
     set_silent(model)
 
-    # A[i, j] = 1 if student i is assigned to option j
-    @variable(model, A[1:nstudents, 1:totaloptions], Bin)
-    # # We'd like to use binary variables but I'm getting infeasibility errors; instead we approximate it with constraints
-    # @variable(model, 0 <= A[1:nstudents, 1:totaloptions] <= 1) #, Bin)
-    # @constraint(model, A .* (1 .- A) .<= 0.1/totaloptions)   # z*(1-z) == 0 implies z == 0 or z == 1
+    # Define the variables (which include calculation intermediates)
+    @variables(model, begin
+        # A[i, j] = 1 if student i is assigned to option j
+        A[1:nstudents, 1:totaloptions], Bin
+        groupsize[1:totaloptions]
+        mingroupsize[1:nweeks]
+        maxgroupsize[1:nweeks]
+        # same_program_penalty[program, j] = z if z+1 students from the same program are assigned to option j
+        same_program_penalty[programs, 1:totaloptions] >= 0
+        # same_pairing[i1, i2, j] = 1 if students i1 and i2 are assigned to option j
+        same_pairing[i=1:nstudents, (i+1):nstudents, 1:totaloptions], Bin
+        # repeat_pairing_penalty[i1, i2] = z if students i1 and i2 are paired z+1 times
+        repeat_pairing_penalty[i=1:nstudents, (i+1):nstudents] >= 0
+    end)
 
-    # Each student gets assigned one option per week:
+    # Each student gets assigned one option per week. If any are pre-assigned, respect that choice.
+    all_preassigned = true
     for (i, s) in enumerate(students)
         s = students[i]
-        for j = 1:nweeks
-            if j > length(s.assigned) || s.assigned[j] > 0   # use -1 to indicate not participating in that week
-                @constraint(model, 0.99 <= sum(A[i, coptions[j]+1:coptions[j+1]]) <= 1.01)
-            end
-        end
-    end
-    # If any of the weeks are pre-assigned, respect the choice:
-    all_preassigned = true
-    for (i, student) in enumerate(students)
-        for (j, option) in enumerate(student.assigned)
+        # encode pre-assignments
+        for (j, option) in enumerate(s.assigned)
             offset = coptions[j]
             for k = 1:noptions[j]
                 if k == option
-                    @constraint(model,  0.99 <= A[i, offset+k])
-                    set_start_value(A[i, offset+k], 1)
+                    @constraint(model,  A[i, offset+k] == 1)
                 else
-                    @constraint(model, A[i, offset+k] <= 0.01)
-                    set_start_value(A[i, offset+k], 0)
+                    @constraint(model,  A[i, offset+k] == 0)
                 end
             end
         end
-        all_preassigned &= length(student.assigned) == nweeks
+        all_preassigned &= length(s.assigned) == nweeks
+        # for the remaining weeks, enforce that each student is assigned exactly one option
+        for j = length(s.assigned)+1:nweeks
+            @constraint(model, sum(A[i, coptions[j]+1:coptions[j+1]]) == 1)
+        end
     end
     if all_preassigned
         @warn "All students are already assigned to groups (use `unassign!` to reset)"
         return students
     end
-    # Warm-start at an intermediate value (∝ 1/interest) for the remaining weeks:
-    for (i, student) in enumerate(students)
-        for j = length(student.assigned)+1:nweeks
-            _interests = interests[j][i, :]
-            w = sum(1 ./ _interests)
-            isfinite(w) || throw(DomainError("Student $i has invalid preference scores in week $j (all must be > 0)"))
-            offset = coptions[j]
-            for k = 1:noptions[j]
-                set_start_value(A[i, offset+k], 1 / (_interests[k] * w))
-            end
-        end
-    end
-    ## Build the objective
-    # First we create a matrix S where S[i, j] = true/false depending on whether students i and j are in the same program
-    S = falses(nstudents, nstudents)
-    for i1 = 1:nstudents
-        p1 = students[i1].program
-        for i2 = i1+1:nstudents
-            p2 = students[i2].program
-            S[i1, i2] = S[i2, i1] = p1 == p2
-        end
-    end
-    # The aggregate preference matrix
-    P = hcat(interests...)
-    # Now the objective
-    @NLobjective(model, Min, sum(A[i, j] * P[i, j] for i = 1:nstudents, j = 1:totaloptions) +
-                             penalty_sameprogram * sum(A[i1, j] * A[i2, j] * S[i1, i2] for i1 = 1:nstudents, i2 = i1+1:nstudents, j = 1:totaloptions) +
-                             penalty_samepartner * sum(A[i1, j] * A[i2, j] for i1 = 1:nstudents, i2 = i1+1:nstudents, j = 1:totaloptions)^2)
+
+    # Define the objective
+    @objective(
+        model,
+        Min,
+        # Optimize student preferences (lower preference score is better)
+        sum(P[i, j] * A[i, j] for i in 1:nstudents, j in 1:totaloptions) +
+        # Penalties
+        penalty_sizeimbalance * sum(maxgroupsize - mingroupsize) +
+        penalty_sameprogram * sum(same_program_penalty) +
+        penalty_samepartner * sum(repeat_pairing_penalty),
+    )
+
+    # Constraints (which calculate intermediate variables too)
+    @constraints(model, begin
+        # Compute the minimum and maximum group size for each week
+        [j=1:totaloptions], groupsize[j] == sum(A[:, j])
+        [k=1:nweeks, j=coptions[k]+1:coptions[k+1]], mingroupsize[k] <= groupsize[j]
+        [k=1:nweeks, j=coptions[k]+1:coptions[k+1]], maxgroupsize[k] >= groupsize[j]
+        # Penalize if more than two students from program p are in the same group
+        [j=1:totaloptions, p=programs], sum(A[i, j] for i in program_to_students[p]) - same_program_penalty[p, j] <= 1
+        # Compute if two students are in the same group
+        [i1=1:nstudents, i2=(i1+1):nstudents, j=1:totaloptions],
+            A[i1, j] + A[i2, j] <= 1 + same_pairing[i1, i2, j]
+        # Repeat pairing penalty
+        [i1=1:nstudents, i2=(i1+1):nstudents],
+            sum(same_pairing[i1, i2, j] for j in 1:totaloptions) <= 1 + repeat_pairing_penalty[i1, i2]
+    end)
+
+    # Solve the model
     optimize!(model)
-    if primal_status(model) != MOI.FEASIBLE_POINT
-        @error "No feasible solution found"
+    if termination_status(model) != MOI.OPTIMAL
+        @error "Solver terminated with status $(termination_status(model))"
     end
-    # @show primal_status(model) dual_status(model) has_values(model) has_duals(model) objective_value(model)
+
+    # @show value.(same_pairing) value.(repeat_pairing_penalty) value.(same_program_penalty)
+
     # Extract the assignments
     Aval = value.(A)
     for i = 1:nstudents
@@ -138,24 +148,35 @@ function assign!(students::AbstractVector{Student}, interests; penalty_sameprogr
     return students
 end
 
-function analyze(students, interests)
+function analyze(students, preferences)
     # Statistics on the assignments:
+    # - mean preference score
+    # - maximum group imbalance
     # - how many times students from the same program are assigned the same group
     # - how many times students appear in the same group
-    # - mean preference score
+    exdiff((min, max)) = max - min
+
     pref = 0
-    nstudents, nweeks = length(students), length(interests)
+    nstudents, nweeks = length(students), length(preferences)
     npairs = Dict{Tuple{String,String}, Int}()    # (student1, student2) => count
     nprog = Dict{Tuple{Int,Int,String}, Int}()    # (week, groupid, program) => count
-    nweeksnz = 0
-    for (j, week) in enumerate(interests)
-        all(iszero, week) && continue
-        nweeksnz += 1
+    npergroup = [zeros(Int, size(week, 2)) for week in preferences]
+    nstudentsperweek = zeros(Int, nweeks)
+    for (j, week) in enumerate(preferences)
+        npg = npergroup[j]
+        computepref = !all(iszero, week)
         for (i, s) in enumerate(students)
-            pref += week[i, s.assigned[j]]
+            option = s.assigned[j]
+            option > 0 || continue
+            if computepref
+                nstudentsperweek[j] += 1
+                pref += week[i, option]
+            end
+            npg[option] += 1
         end
     end
-    pref /= nweeksnz * nstudents
+    pref /= sum(nstudentsperweek)
+    maximbalance = maximum([exdiff(extrema(npg)) for npg in npergroup])
     for (i1, s1) in enumerate(students)
         for i2 = i1+1:nstudents
             s2 = students[i2]
@@ -176,12 +197,13 @@ function analyze(students, interests)
             end
         end
     end
-    return pref, npairs, nprog
+    return pref, maximbalance, npairs, nprog
 end
 
-function printstats(io::IO, students, interests)
-    pref, npairs, nprog = analyze(students, interests)
+function printstats(io::IO, students, preferences)
+    pref, maximbalance, npairs, nprog = analyze(students, preferences)
     println(io, "Mean preference score: ", pref)
+    println(io, "Maximum imbalance in group size: ", maximbalance)
     println(io, "\nTwo or more students from the same program assigned to the same group (\"program collisions\"):")
     println(io, "  Total number of program collisions: ", length(nprog))
     println(io, "  Maximum number of collisions in a single group: ", maximum(values(nprog); init=0))
@@ -197,7 +219,7 @@ function printstats(io::IO, students, interests)
     println(io, "  Total number of student collisions: ", length(filter(pr -> pr.second > 1, npairs)))
     println(io, "  Maximum number of collisions for a single pair: ", maximum(values(npairs); init=0))
 end
-printstats(students, interests) = printstats(stdout, students, interests)
+printstats(students, preferences) = printstats(stdout, students, preferences)
 
 function parse_inputs end
 
