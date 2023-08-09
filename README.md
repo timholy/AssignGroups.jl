@@ -103,3 +103,7 @@ Note that these can be in conflict with each other, you may not be able to avoid
 Likewise, the more you penalize collisions, the less well you respect student `preferences`.
 
 Finally, you can manually perform early assignments and compute the remainder; if `student.assigned` is not empty upon calling `assign!`, the existing choices are retained. Use `unassign!(students)` to wipe out all existing assignments.
+
+## Credits
+
+The solution strategy was [designed by Oscar Dowson](https://discourse.julialang.org/t/matrix-assignment-problem-performance-advice/102601/10?u=tim.holy). 
