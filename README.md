@@ -10,7 +10,7 @@ Groups address a topic led by different faculty members, and the topics in week 
 The optimization goals are as follows:
 
 - each student gets assigned to a single group each week
-- to give the students choice among topics, each student supplies a preference score (lower is better, e.g., 1 = most preferred and 4 = least=preferred) for each of the groups in each week; we aim to minimize the summed preference scores of all assignments.
+- to give the students choice among topics, each student supplies a preference score (lower is better, e.g., 1 = most-preferred and 4 = least-preferred) for each of the groups in each week; we aim to minimize the summed preference scores of all assignments.
 - to keep the groups of approximately equal size, we penalize imbalance among the sizes of groups within the same week
 - to ensure diversity of graduate programs within groups, we penalize assigning students from the same program to the same group during the same week
 - to ensure that students get to know a wide range of other students, we penalize having students paired together repeatedly across weeks
