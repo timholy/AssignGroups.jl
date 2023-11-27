@@ -2,7 +2,62 @@
 
 This packages "optimizes" (according to chosen criteria) assignment of students to collaborative groups.
 
-It was designed for Washington University in St. Louis' umbrella biomedical sciences program, the
+There are two separate assignment tasks, called "Immersion" and "Partners", corresponding to names of modules exported
+by the package.
+
+## Partners
+
+In the `Partners` module, `n` students are assigned to `ngroups` collaborative groups. Students have the option to supply a list of partners they'd like to work with. Groups are assigned according to three criteria:
+
+- the group size should be consistent (the biggest group will be at most 1 larger than the smallest)
+- the average student "score" (e.g., performance on quizzes) should be balanced across groups
+- partner requests will be honored
+
+Naturally, these goals can be in conflict with one another.
+The first constraint is absolute; the second and third can trade off against one another, with the balance between them set by the magnitude of the partnering preference (more negative means greater weight placed on partner preferences).
+
+Here's a demo, with 6 students, two of whom would like to work together. In this situation we value preserving the partnership above balancing the average scores, and assign a bonus of `-1000`, for preserving requested partners:
+
+```julia
+julia> using AssignGroups.Partners
+
+julia> students = [Student("Student"*s, "Last", p) for (s, p) in zip('A':'F', [1,2,3,1,2,3])]
+6-element Vector{Student}:
+ StudentA Last (1.0)
+ StudentB Last (2.0)
+ StudentC Last (3.0)
+ StudentD Last (1.0)
+ StudentE Last (2.0)
+ StudentF Last (3.0)
+
+julia> prefs = zeros(6, 6);
+
+julia> prefs[1, 4] = prefs[4, 1] = -1000;   # StudentA and StudentD really want to work together
+
+julia> groups = assign(students, 3, prefs)
+3-element Vector{Vector{Student}}:
+ [StudentC Last (3.0), StudentF Last (3.0)]
+ [StudentA Last (1.0), StudentD Last (1.0)]
+ [StudentB Last (2.0), StudentE Last (2.0)]
+```
+
+If we weaken the preference, then the preference is overridden to balance the group scores:
+
+```julia
+julia> prefs[1, 4] = prefs[4, 1] = -0.1;
+
+julia> groups = assign(students, 3, prefs)
+3-element Vector{Vector{Student}}:
+ [StudentA Last (1.0), StudentC Last (3.0)]
+ [StudentB Last (2.0), StudentE Last (2.0)]
+ [StudentD Last (1.0), StudentF Last (3.0)]
+```
+
+**Tip**: you can load the students from a CSV file with `Partners.parse_inputs(CSV.Rows(filename); preferencescore)`.
+
+## Immersion
+
+The `Immersion` module was designed for Washington University in St. Louis' umbrella biomedical sciences program, the
 Division of Biological and Biomedical Science (DBBS). DBBS currently consists of 12 programs, admits approximately
 120 students/year, and begins with "Scientific Immersion" in which students get assigned to a group in week1 and week2.
 Groups address a topic led by different faculty members, and the topics in week 1 do not repeat in week 2 (it's a fresh set of topics).
@@ -21,7 +76,7 @@ Students are identified by first and last name; in this example, all students ha
 The student preferences are captured in the variable `preferences` below.
 
 ```julia
-julia> using AssignGroups
+julia> using AssignGroups.Immersion
 
 julia> students = [Student("Student", s, "Program"*p) for (s, p) in zip('A':'F', "123123")]
 6-element Vector{Student}:
