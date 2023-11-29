@@ -24,23 +24,6 @@ function Immersion.parse_inputs(parser, file::CSV.Rows)
     return students, Matrix{T}(reshape(preferences, ngroups, nrows)'), String.(collect(keys(first(file)))[4:end])
 end
 
-"""
-    students, preferences = parse_inputs(file::CSV.Rows; preferencescore=-1)
-
-Extract a list of students from a CSV file. The CSV file should have the following format:
-
-    First,Last,Score,Partners
-    StudentA,Last,0.78,
-    StudentB,Last,0.92,"StudentA Last,StudentK Last"
-    StudentC,Last,0.85,
-    ...
-
-The header line is optional.  `Score` is a floating point number, and `Partners` is (optionally) a comma-separated list
-of student names who are requested partners. The `preferencescore` is the score assigned to each requested pairing, i.e.,
-`preferences[i, j] ∈ (0, preferencescore)`.
-
-See also: [`Partners.assign`](@ref).
-"""
 function Partners.parse_inputs(file::CSV.Rows; preferencescore=-1)
     students = Partners.Student[]
     studentidx = Dict{String,Int}()

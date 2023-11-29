@@ -7,12 +7,20 @@ using CSV
 
 @testset "Partners" begin
     students = [Student("Student"*s, "Last", p) for (s, p) in zip('A':'F', [1,2,3,1,2,3])]
-    groups = assign(students, 2, zeros(6, 6))
+    groups, status = assign(students, 2, zeros(6, 6); attributes=("mip_rel_gap" => 1e-3,))
+    @test status == OPTIMAL
     for g in groups
         @test length(g) == 3
         @test mean([s.score for s in g]) ≈ 2
     end
-    groups = assign(students, 3, zeros(6, 6))
+    redirect_stdout(devnull) do
+        @test_logs (:error, r"TIME_LIMIT") (:info, r"Consider") try
+                assign(students, 2, zeros(6, 6); time_limit=1e-6)  # `value.(A)` fails because there are no solutions in such a short time
+            catch
+            end
+    end
+
+    groups, status = assign(students, 3, zeros(6, 6))
     for g in groups
         @test length(g) == 2
         @test mean([s.score for s in g]) ≈ 2
@@ -20,7 +28,7 @@ using CSV
     # A strong preference overrides the score balancing
     prefs = zeros(6, 6)
     prefs[1, 4] = prefs[4, 1] = -1000
-    groups = assign(students, 3, prefs)
+    groups, status = assign(students, 3, prefs)
     any14 = false
     for g in groups
         @test length(g) == 2
@@ -28,7 +36,7 @@ using CSV
     end
     @test any14
     prefs[1, 4] = prefs[4, 1] = -0.1
-    groups = assign(students, 3, prefs)
+    groups, status = assign(students, 3, prefs)
     for g in groups
         @test length(g) == 2
         @test mean([s.score for s in g]) ≈ 2

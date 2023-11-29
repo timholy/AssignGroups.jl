@@ -4,8 +4,17 @@ using JuMP
 using HiGHS
 using Statistics
 
-export Student, assign, printstats
+const OPTIMAL = MOI.OPTIMAL
+export Student, assign, OPTIMAL
 
+const PSA = Pair{String}
+
+"""
+    Student(first_name, last_name, score)
+
+Construct a student. `score` should be some measure of performance. It is used as an optimization target, attempting
+to minimize the differences in average `score` across groups.
+"""
 struct Student
     first_name::String
     last_name::String
@@ -19,7 +28,27 @@ Base.show(io::IO, s::Student) = print(io, s.first_name, " ", s.last_name, " (", 
 
 singlename(s::Student) = s.first_name * " " * s.last_name
 
-function assign(students::AbstractVector{Student}, ngroups::Int, preferences::AbstractMatrix{<:Real})
+"""
+    groups, status = assign(students::AbstractVector{Student}, ngroups::Int, preferences::AbstractMatrix{<:Real};
+                            silent::Bool=true, time_limit=10.0, attributes=()))
+
+Assign `students` to `ngroups` groups, balancing the number of students/group, average "scores", and respecting partner `preferences`.
+`preferences[i, j] < 0` if `students[i]` and `students[j]` have listed each other as desirable partners; the more negative (the larger the magnitude),
+the more this preference will be valued compared to balancing average "scores."
+
+`groups` is a vector-of-vectors, each containing the students assigned to a particular group.
+`status = OPTIMAL` if optimization converged.
+
+Keyword arguments:
+- set `silent=false` to see incremental output during optimization
+- `time_limit` is expressed in seconds; consider increasing this number if `status != OPTIMAL`
+- `attributes` is a list of `"name" => val` pairs, see the [HiGHS options](https://ergo-code.github.io/HiGHS/dev/options/definitions/) for a complete list.
+  `"mip_rel_gap"` may be particularly useful for controlling convergence.
+
+See also: [`Student`](@ref), [`Partners.parse_inputs`](@ref) (after loading `CSV.jl`).
+"""
+function assign(students::AbstractVector{Student}, ngroups::Int, preferences::AbstractMatrix{<:Real};
+                silent::Bool=true, time_limit=10.0, attributes::Union{Tuple{Vararg{PSA}}, AbstractVector{<:PSA}}=())
     # Check the inputs
     axs = eachindex(students)
     first(axs) == 1 || throw(DimensionMismatch("`students` indices must start at 1"))
@@ -31,7 +60,13 @@ function assign(students::AbstractVector{Student}, ngroups::Int, preferences::Ab
 
     # Define the solver
     model = Model(HiGHS.Optimizer)
-    set_silent(model)
+    silent && set_silent(model)
+    set_attribute(model, "time_limit", float(time_limit))
+    if attributes !== nothing
+        for pr in attributes
+            set_attribute(model, pr...)
+        end
+    end
 
     # Define the variables (which include calculation intermediates)
     @variables(model, begin
@@ -74,6 +109,11 @@ function assign(students::AbstractVector{Student}, ngroups::Int, preferences::Ab
     optimize!(model)
     if termination_status(model) != MOI.OPTIMAL
         @error "Solver terminated with status $(termination_status(model))"
+        print(solution_summary(model))
+        if termination_status(model) == MOI.TIME_LIMIT
+            rtol = round(solution_summary(model).relative_gap; sigdigits=2)
+            @info "Consider increasing `time_limit` (currently $time_limit) and/or `attributes=(\"mip_rel_gap\"=>rtol, ...)` where rtol > $rtol\n      or make `preferences` even more negative. Set `silent=true` to see progress."
+        end
     end
 
     # @show value.(A) value.(groupsize) value.(groupdeviation) # value.(paired)
@@ -87,9 +127,29 @@ function assign(students::AbstractVector{Student}, ngroups::Int, preferences::Ab
             Aval[i, j] > 0.5 && push!(groups[j], s)
         end
     end
-    return groups
+    return groups, termination_status(model)
 end
 
+"""
+    students, preferences = parse_inputs(file::CSV.Rows; preferencescore=-1)
+
+Extract a list of students from a CSV file. The CSV file should have the following format:
+
+    First,Last,Score,Partners
+    StudentA,Last,0.78,
+    StudentB,Last,0.92,"StudentA Last,StudentK Last"
+    StudentC,Last,0.85,
+    ...
+
+The header line is optional.  `Score` is a floating point number, and `Partners` is (optionally) a comma-separated list
+of student names who are requested partners. The `preferencescore` is the score assigned to each requested pairing, i.e.,
+`preferences[i, j] ∈ (0, preferencescore)`.
+
+!!! warning
+    You must load the `CSV` package for this method to be available.
+
+See also: [`assign`](@ref).
+"""
 function parse_inputs end
 
 end
