@@ -1,7 +1,7 @@
-First,Last,Program,TopicA,TopicB
-FirstA,LastA,Program1,1,4
-FirstB,LastB,Program2,1,4
-FirstC,LastC,Program3,1,4
-FirstD,LastD,Program4,4,1
-FirstE,LastE,Program5,4,1
-FirstF,LastF,Program6,4,1
+First,Last,Email,Program,TopicA,TopicB
+FirstA,LastA,A@univ.edu,Program1,1,4
+FirstB,LastB,B@univ.edu,Program2,1,4
+FirstC,LastC,C@univ.edu,Program3,1,4
+FirstD,LastD,D@univ.edu,Program4,4,1
+FirstE,LastE,E@univ.edu,Program5,4,1
+FirstF,LastF,F@univ.edu,Program6,4,1

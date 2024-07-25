@@ -2,14 +2,14 @@ module AssignGroupsDataFrames
 
 using AssignGroups, DataFrames
 
-function Immersion.parse_inputs(parser, df::DataFrame; studentcols=[1,2,3], preferencecols=4:size(df, 2))
-    length(studentcols) == 3 || throw(ArgumentError("studentcols must have 3 elements"))
+function Immersion.parse_inputs(parser, df::DataFrame; studentcols=[1,2,3,4], preferencecols=maximum(studentcols)+1:size(df, 2))
+    length(studentcols) == 4 || throw(ArgumentError("studentcols must have 4 elements"))
     students = Immersion.Student[]
     preferences = Real[]
-    T = Bool
+    T = Union{}
     ngroups, nrows = length(preferencecols), 0
     for (i, row) in enumerate(eachrow(df))
-        push!(students, Immersion.Student(row[studentcols[1]], row[studentcols[2]], row[studentcols[3]]))
+        push!(students, Immersion.Student(row[studentcols]...))
         for j = preferencecols
             v = parser(row[j])
             T = promote_type(T, typeof(v))

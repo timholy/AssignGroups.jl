@@ -8,18 +8,21 @@ export Student, assign!, unassign!, printstats
 struct Student
     first_name::String
     last_name::String
+    email::String
     program::String
     assigned::Vector{Int}   # option assigned to each week
 end
-Student(first_name, last_name, program) = Student(string(first_name), string(last_name), string(program), Int[])
+Student(first_name, last_name, email, program) = Student(string(first_name), string(last_name), string(email), string(program), Int[])
+Student(first_name, last_name, program) = Student(first_name, last_name, "", program)
 
 Base.:(==)(s1::Student, s2::Student) = s1.first_name == s2.first_name &&
                                        s1.last_name == s2.last_name &&
+                                       s1.email == s2.email &&
                                        s1.program == s2.program &&
                                        s1.assigned == s2.assigned
 
 function Base.show(io::IO, s::Student)
-    print(io, s.first_name, " ", s.last_name, " (", s.program, ")")
+    print(io, s.first_name, " ", s.last_name, ", <", s.email, "> (", s.program, ")")
     if !isempty(s.assigned)
         print(io, ": ", s.assigned)
     end
