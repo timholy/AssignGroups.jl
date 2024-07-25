@@ -1,6 +1,7 @@
 module TestImmersion
 
 using AssignGroups.Immersion
+using CSV, DataFrames
 using Test
 
 @testset "Immersion" begin
@@ -137,6 +138,16 @@ using Test
     @test pref == (6 + (3 + 1 + 1 + 1 + 2 + 3)) / 12
     @test isempty(nprog)
     @test any(==(2), values(npairs))
+
+    # Test the extensions
+    students1, preferences1, groups1 = Immersion.parse_inputs(x -> parse(Int, x), CSV.Rows(joinpath(@__DIR__, "csvfiles", "immersion1.csv")))
+    @test length(students1) == 6
+    @test size(preferences1) == (6, 2)
+    @test groups1 == ["TopicA", "TopicB"]
+    students1, preferences1, groups1 = Immersion.parse_inputs(x -> parse(Int, x), DataFrame(CSV.Rows(joinpath(@__DIR__, "csvfiles", "immersion1.csv"))))
+    @test length(students1) == 6
+    @test size(preferences1) == (6, 2)
+    @test groups1 == ["TopicA", "TopicB"]
 end
 
 end
