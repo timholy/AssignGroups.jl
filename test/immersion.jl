@@ -144,7 +144,7 @@ using Test
     @test length(students1) == 6
     @test size(preferences1) == (6, 2)
     @test groups1 == ["TopicA", "TopicB"]
-    students1, preferences1, groups1 = Immersion.parse_inputs(x -> parse(Int, x), DataFrame(CSV.Rows(joinpath(@__DIR__, "csvfiles", "immersion1.csv"))))
+    students1, preferences1, groups1 = Immersion.parse_inputs(identity, DataFrame(CSV.File(joinpath(@__DIR__, "csvfiles", "immersion1.csv"))))
     @test length(students1) == 6
     @test size(preferences1) == (6, 2)
     @test groups1 == ["TopicA", "TopicB"]

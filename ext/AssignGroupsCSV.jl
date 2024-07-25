@@ -2,14 +2,14 @@ module AssignGroupsCSV
 
 using AssignGroups, CSV
 
-function Immersion.parse_inputs(parser, file::CSV.Rows)
+function Immersion.parse_inputs(parser, file::CSV.Rows; studentcols=[1,2,3,4], preferencecols=maximum(studentcols)+1:length(first(file)))
     students = Immersion.Student[]
     preferences = Real[]
-    T = Bool
+    T = Union{}
     ngroups, nrows = nothing, 0
     for (i, row) in enumerate(file)
-        push!(students, Immersion.Student(row[1], row[2], row[3]))
-        for j = 4:length(row)
+        push!(students, Immersion.Student([row[i] for i in studentcols]...))
+        for j = preferencecols
             v = parser(row[j])
             T = promote_type(T, typeof(v))
             push!(preferences, v)
@@ -17,11 +17,11 @@ function Immersion.parse_inputs(parser, file::CSV.Rows)
         if i == 1
             ngroups = length(preferences)
         else
-            @assert length(row) - 3 == ngroups
+            @assert length(row) - 4 == ngroups
         end
         nrows = i
     end
-    return students, Matrix{T}(reshape(preferences, ngroups, nrows)'), String.(collect(keys(first(file)))[4:end])
+    return students, Matrix{T}(reshape(preferences, ngroups, nrows)'), String.(collect(keys(first(file)))[preferencecols])
 end
 
 function Partners.parse_inputs(file::CSV.Rows; preferencescore=-1)
