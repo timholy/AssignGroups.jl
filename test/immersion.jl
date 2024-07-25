@@ -132,7 +132,7 @@ using Test
     @test maximum(values(npairs)) == 1
 
     unassign!(students)
-    assign!(students, preferences; penalty_samepartner=0)
+    assign!(students, preferences; penalty_samepartner=0, penalty_sameprogram=1.5)
     pref, maximbalance, npairs, nprog = Immersion.analyze(students, preferences)
     @test pref == (6 + (3 + 1 + 1 + 1 + 2 + 3)) / 12
     @test isempty(nprog)
